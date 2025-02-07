@@ -1,0 +1,43 @@
+//test root
+
+curl -X 'GET' 'http://127.0.0.1:8000/' -H 'accept: application/json'
+
+
+//test creation of expence
+
+curl -X 'POST' 'http://127.0.0.1:8000/expenses' \
+-H 'Content-Type: application/json' \
+-d '{
+    "amount": 25.50,
+    "description": "Coffee",
+    "category": "Food"
+}'
+
+
+//Test Listing Expenses 
+
+curl -X 'GET' 'http://127.0.0.1:8000/expenses' -H 'accept: application/json'
+
+
+
+//Test Retrieving a Specific Expense
+
+curl -X 'GET' 'http://127.0.0.1:8000/expenses/some-uuid' -H 'accept: application/json'
+
+
+//Test Updating an Expense
+
+curl -X 'PUT' 'http://127.0.0.1:8000/expenses/some-uuid' \
+-H 'Content-Type: application/json' \
+-d '{
+    "amount": 30.00,
+    "description": "Updated Coffee",
+    "category": "Drinks"
+}'
+
+
+//Test Deleting an Expense
+
+curl -X 'DELETE' 'http://127.0.0.1:8000/expenses/some-uuid' -H 'accept: application/json'
+
+
