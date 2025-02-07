@@ -1,0 +1,11 @@
+#ignore python cache
+__pycache__/
+
+#ignore virtual environments
+venv/
+
+#ignore environment vars
+.env
+
+#ignore logs
+*.log
