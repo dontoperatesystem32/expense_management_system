@@ -3,6 +3,9 @@ from fastapi.testclient import TestClient
 from sqlmodel import SQLModel, create_engine, Session
 from main import app, get_session
 
+# Set default async fixture scope
+pytestmark = pytest.mark.asyncio(scope="function")
+
 # Test database setup
 TEST_DATABASE_URL = "sqlite:///./test.db"
 engine = create_engine(TEST_DATABASE_URL, echo=True)
