@@ -107,7 +107,7 @@ def test_read_users_me(client: TestClient):
     response_no_token = client.get("/users/me")
     assert response_no_token.status_code == 401
 
-    # Test invalid token (you'd ideally test with an expired or malformed token, but for simplicity, an empty string is sufficient to represent invalid token for this test)
-    headers_invalid_token = {"Authorization": "Bearer invalid_token"} # In real app, test with jwt.ExpiredSignatureError etc.
+    # Test invalid token 
+    headers_invalid_token = {"Authorization": "Bearer invalid_token"} 
     response_invalid_token = client.get("/users/me", headers=headers_invalid_token)
     assert response_invalid_token.status_code == 401

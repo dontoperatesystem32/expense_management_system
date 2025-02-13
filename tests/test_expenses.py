@@ -219,7 +219,7 @@ def test_create_expense_invalid_category_length(client: TestClient):
     assert "string_too_long" in response_long_cat.json()["detail"][0]["type"]
 
 def test_update_expense_invalid_data(client: TestClient):
-    # Register, login, create expense (setup)
+    # Register, login, create expense
     client.post("/users/register", json={"username": "user_update_invalid", "password": "pass"})
     login = client.post("/users/login", data={"username": "user_update_invalid", "password": "pass"})
     token = login.json()["access_token"]
@@ -292,7 +292,7 @@ def test_update_expense_unauthorized(client: TestClient):
     # User 2 tries to update User 1's expense
     updated_expense_data = {"amount": 30.0, "description": "User2 Update Attempt", "category": "Food"}
     update_response = client.put(f"/expenses/{expense_id}", json=updated_expense_data, headers=headers2)
-    assert update_response.status_code == 404 # Or 403, depending on desired security
+    assert update_response.status_code == 404 #or 403
 
 def test_delete_expense_unauthorized(client: TestClient):
     # Create two users
@@ -363,7 +363,7 @@ def test_expense_category_filter_no_match(client: TestClient):
     assert response.json() == [] # Expect empty list
 
 def test_expense_pagination_zero_limit(client: TestClient):
-    # Register, login, create expense (setup - create a few expenses if needed for pagination to be meaningful)
+    # Register, login, create expense 
     client.post("/users/register", json={"username": "user_page_zero_limit", "password": "pass"})
     login = client.post("/users/login", data={"username": "user_page_zero_limit", "password": "pass"})
     token = login.json()["access_token"]
@@ -374,10 +374,10 @@ def test_expense_pagination_zero_limit(client: TestClient):
 
     response = client.get("/expenses?limit=0", headers=headers)
     assert response.status_code == 200
-    assert response.json() == [] # Expect empty list or handle gracefully - empty list is fine
+    assert response.json() == [] 
 
 def test_expense_pagination_skip_too_high(client: TestClient):
-    # Register, login, create expense (setup - create a few expenses)
+    # Register, login, create expense 
     client.post("/users/register", json={"username": "user_page_skip_high", "password": "pass"})
     login = client.post("/users/login", data={"username": "user_page_skip_high", "password": "pass"})
     token = login.json()["access_token"]
