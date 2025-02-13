@@ -1,42 +1,62 @@
-from fastapi import Depends, FastAPI, HTTPException, status
-from models import Expense, ExpenseCreate, expenses_db, User, UserInDB, UserDTO, users_db, Token, TokenData
-from datetime import datetime, timezone, timedelta
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from typing import Annotated
-from passlib.context import CryptContext
+from typing import Annotated, Optional
+from datetime import datetime, timedelta, timezone
 import jwt
 from jwt.exceptions import InvalidTokenError
+from sqlmodel import Session, select
+from passlib.context import CryptContext
+from models import User, UserCreate, UserRead, Expense, ExpenseCreate, ExpenseRead, Token, TokenData
+from sqlmodel import SQLModel, create_engine
 
+# Database setup
+sqlite_url = "sqlite:///database.db"
+engine = create_engine(sqlite_url, echo=True)  # echo=True for debugging
 
-app = FastAPI()
+# Lifespan event handler
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    #create database tables on startup
+    SQLModel.metadata.create_all(engine)
+    yield
+    # Cleanup on shutdown (if needed)
+    # engine.dispose()  # Optional: Close database connections
 
-SECRET_KEY = "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7"
+# FastAPI app with lifespan
+app = FastAPI(lifespan=lifespan)
+
+# Security setup
+SECRET_KEY = "your-secret-key-here"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="users/login")
 
+# Database dependency
+def get_session():
+    with Session(engine) as session:
+        yield session
 
-
-def verify_password(plain_password, hashed_password):
+# Authentication functions
+def verify_password(plain_password: str, hashed_password: str):
     return pwd_context.verify(plain_password, hashed_password)
 
-
-def get_password_hash(password):
+def get_password_hash(password: str):
     return pwd_context.hash(password)
 
+def get_user(session: Session, username: str) -> Optional[User]:
+    statement = select(User).where(User.username == username)
+    return session.exec(statement).first()
 
-def authenticate_user(users_db, username: str, password: str):
-    user = get_user(users_db, username)
-    if not user:
-        return False
-    if not verify_password(password, user.hashed_password):
+def authenticate_user(session: Session, username: str, password: str):
+    user = get_user(session, username)
+    if not user or not verify_password(password, user.hashed_password):
         return False
     return user
 
-def create_access_token(data: dict, expires_delta: timedelta | None = None):
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
@@ -46,15 +66,10 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
-
-def get_user(users_db, username: str):
-    for user in users_db:
-        if user.username == username:
-            return user
-    return None
-
-
-async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
+async def get_current_user(
+    token: Annotated[str, Depends(oauth2_scheme)],
+    session: Session = Depends(get_session)
+):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -68,150 +83,130 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
         token_data = TokenData(username=username)
     except InvalidTokenError:
         raise credentials_exception
-    user = get_user(users_db, username=token_data.username)
+    
+    user = get_user(session, username=token_data.username)
     if user is None:
         raise credentials_exception
     return user
 
 async def get_current_active_user(
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(get_current_user)]
 ):
     if current_user.disabled:
         raise HTTPException(status_code=400, detail="Inactive user")
     return current_user
 
-# @app.post("/token")
-@app.post("/users/login")
-async def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm, Depends()]) -> Token:
-    user = authenticate_user(users_db, form_data.username, form_data.password)
+# Authentication endpoints
+@app.post("/users/login", response_model=Token)
+async def login_for_access_token(
+    form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
+    session: Session = Depends(get_session)
+):
+    user = authenticate_user(session, form_data.username, form_data.password)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
         )
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
         data={"sub": user.username}, expires_delta=access_token_expires
     )
-    return Token(access_token=access_token, token_type="bearer")
+    return {"access_token": access_token, "token_type": "bearer"}
 
-@app.get("/users/me")
-async def read_users_me(current_user: Annotated[User, Depends(get_current_user)]):
-    return current_user
-
-
-@app.post("/users/register", response_model=User)
-async def create_user(user: UserDTO):
-    # Check if the username already exists
-    if user.username in users_db:
+@app.post("/users/register", response_model=UserRead)
+async def create_user(
+    user: UserCreate,
+    session: Session = Depends(get_session)
+):
+    existing_user = get_user(session, user.username)
+    if existing_user:
         raise HTTPException(status_code=400, detail="Username already registered")
     
-    # Hash the user's password before storing it
     hashed_password = get_password_hash(user.password)
+    db_user = User(username=user.username, hashed_password=hashed_password)
     
-    # Create a new User instance with the hashed password
-    user_in_db = User(**user.model_dump(), disabled = False, hashed_password=hashed_password)
+    session.add(db_user)
+    session.commit()
+    session.refresh(db_user)
     
-    # Store the user in the database (here we're using the in-memory users_db dictionary)
-    users_db.append(user_in_db)
+    return db_user
 
-    print("users_db: \n" + str(users_db))
-    
-    # Return the created user
-    return user_in_db
-
-
-
-
-#All endpoints return 401 when unauthenticated
-#404 responses for non-owned resources
-
-
-#stage 1
-
-@app.get("/")
-def read_root():
-    return {"message": "Hello, FastAPI!"}
-
-@app.get("/items/{item_id}")
-def read_item(item_id: int, q: str = None):
-    return {"item_id": item_id, "query": q}
-
-
-#create an expense
-@app.post("/expenses", response_model=Expense)
-async def create_expense(
-    expense_data: ExpenseCreate,
+@app.get("/users/me", response_model=UserRead)
+async def read_users_me(
     current_user: Annotated[User, Depends(get_current_active_user)]
 ):
-    expense = Expense(
-        **expense_data.dict(),
-        owner=current_user.username
-    )
-    expenses_db.append(expense)
+    return current_user
+
+# Expense endpoints
+@app.post("/expenses", response_model=ExpenseRead)
+async def create_expense(
+    expense: ExpenseCreate,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Session = Depends(get_session)
+):
+    db_expense = Expense(**expense.model_dump(), owner_id=current_user.id)
+    
+    session.add(db_expense)
+    session.commit()
+    session.refresh(db_expense)
+    
+    return db_expense
+
+@app.get("/expenses", response_model=list[ExpenseRead])
+async def get_expenses(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Session = Depends(get_session)
+):
+    statement = select(Expense).where(Expense.owner_id == current_user.id)
+    expenses = session.exec(statement).all()
+    return expenses
+
+@app.get("/expenses/{expense_id}", response_model=ExpenseRead)
+async def get_expense(
+    expense_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Session = Depends(get_session)
+    
+):
+    expense = session.get(Expense, expense_id)
+    if not expense or expense.owner_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Expense not found")
     return expense
 
-
-#list all expenses
-@app.get("/expenses", response_model=list[Expense])
-async def get_expenses(
-    current_user: Annotated[User, Depends(get_current_active_user)]
-):
-    return [expense for expense in expenses_db if expense.owner == current_user.username]
-
-
-# Retrieve a specific expense by ID
-@app.get("/expenses/{expense_id}", response_model=Expense)
-async def get_expense_by_id(
-    expense_id: str,
-    current_user: Annotated[User, Depends(get_current_active_user)]
-):
-    for expense in expenses_db:
-        if expense.id == expense_id:
-            if expense.owner == current_user.username:
-                return expense
-            else:
-                raise HTTPException(status_code=404, detail="Expense not found")
-    raise HTTPException(status_code=404, detail="Expense not found")
-
-
-@app.put("/expenses/{expense_id}", response_model=Expense)
+@app.put("/expenses/{expense_id}", response_model=ExpenseRead)
 async def update_expense(
-    expense_id: str,
-    updated_data: ExpenseCreate,
-    current_user: Annotated[User, Depends(get_current_active_user)]
+    expense_id: int,
+    expense_data: ExpenseCreate,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Session = Depends(get_session)
 ):
-    for index, expense in enumerate(expenses_db):
-        if expense.id == expense_id:
-            if expense.owner != current_user.username:
-                #security through obscurity, defense in depth, aligns with owasp best practices
-                #prevents from confirming existence of other users' expenses. 404 instead of 403 forbidden
-                raise HTTPException(status_code=404, detail="Expense not found")
-            # Preserve original date and owner, update other fields
-            updated_expense = Expense(
-                id=expense_id,
-                owner=expense.owner,
-                date=expense.date,
-                last_updated=datetime.now(timezone.utc).isoformat(),
-                **updated_data.dict()
-            )
-            expenses_db[index] = updated_expense
-            return updated_expense
-    raise HTTPException(status_code=404, detail="Expense not found")
+    db_expense = session.get(Expense, expense_id)
+    if not db_expense or db_expense.owner_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Expense not found")
     
+    for key, value in expense_data.model_dump().items():
+        setattr(db_expense, key, value)
+    
+    db_expense.last_updated = datetime.now(timezone.utc)
+    
+    session.add(db_expense)
+    session.commit()
+    session.refresh(db_expense)
+    
+    return db_expense
 
-
-# DELETE an expense by ID
-@app.delete("/expenses/{expense_id}", response_model=dict)
+@app.delete("/expenses/{expense_id}")
 async def delete_expense(
-    expense_id: str,
-    current_user: Annotated[User, Depends(get_current_active_user)]
+    expense_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Session = Depends(get_session)
 ):
-    for index, expense in enumerate(expenses_db):
-        if expense.id == expense_id:
-            if expense.owner != current_user.username:
-                raise HTTPException(status_code=404, detail="Expense not found")
-            del expenses_db[index]
-            return {"message": "Expense deleted successfully"}
-    raise HTTPException(status_code=404, detail="Expense not found")
+    expense = session.get(Expense, expense_id)
+    if not expense or expense.owner_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Expense not found")
+    
+    session.delete(expense)
+    session.commit()
+    
+    return {"message": "Expense deleted successfully"}
