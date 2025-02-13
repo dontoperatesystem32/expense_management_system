@@ -124,6 +124,10 @@ async def create_user(user: UserDTO):
 
 
 
+#All endpoints return 401 when unauthenticated
+#404 responses for non-owned resources
+
+
 #stage 1
 
 @app.get("/")
@@ -181,6 +185,8 @@ async def update_expense(
     for index, expense in enumerate(expenses_db):
         if expense.id == expense_id:
             if expense.owner != current_user.username:
+                #security through obscurity, defense in depth, aligns with owasp best practices
+                #prevents from confirming existence of other users' expenses. 404 instead of 403 forbidden
                 raise HTTPException(status_code=404, detail="Expense not found")
             # Preserve original date and owner, update other fields
             updated_expense = Expense(
