@@ -1,8 +1,8 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, Query
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from typing import Annotated, Optional
-from datetime import datetime, timedelta, timezone
+from typing import Annotated, Optional, List
+from datetime import datetime, timedelta, timezone, date
 import jwt
 from jwt.exceptions import InvalidTokenError
 from sqlmodel import Session, select
@@ -153,13 +153,50 @@ async def create_expense(
     
     return db_expense
 
-@app.get("/expenses", response_model=list[ExpenseRead])
+@app.get("/expenses", response_model=List[ExpenseRead])
 async def get_expenses(
     current_user: Annotated[User, Depends(get_current_active_user)],
-    session: Session = Depends(get_session)
+    session: Session = Depends(get_session),
+    start_date: Optional[date] = Query(
+        None,
+        description="Filter expenses created on or after this date (YYYY-MM-DD)"
+    ),
+    end_date: Optional[date] = Query(
+        None,
+        description="Filter expenses created on or before this date (YYYY-MM-DD)"
+    ),
+    category: Optional[str] = Query(
+        None,
+        description="Filter expenses by category"
+    ),
+    skip: int = Query(
+        0,
+        description="Number of records to skip for pagination",
+        ge=0
+    ),
+    limit: int = Query(
+        100,
+        description="Maximum number of records to return",
+        le=1000
+    )
 ):
-    statement = select(Expense).where(Expense.owner_id == current_user.id)
-    expenses = session.exec(statement).all()
+    #base query
+    query = select(Expense).where(Expense.owner_id == current_user.id)
+
+    # Apply date range filter
+    if start_date:
+        query = query.where(Expense.date >= start_date)
+    if end_date:
+        query = query.where(Expense.date <= end_date)
+
+    # Apply category filter
+    if category:
+        query = query.where(Expense.category == category)
+
+    # Apply pagination
+    query = query.offset(skip).limit(limit)
+
+    expenses = session.exec(query).all()
     return expenses
 
 @app.get("/expenses/{expense_id}", response_model=ExpenseRead)
