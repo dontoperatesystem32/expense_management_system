@@ -9,3 +9,6 @@ venv/
 
 #ignore logs
 *.log
+
+#ignore database file
+database.db
