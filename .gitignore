@@ -12,3 +12,4 @@ venv/
 
 #ignore database file
 database.db
+test.db
