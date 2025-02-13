@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+sqlmodel
+pydantic
+passlib
+python-jose[cryptography]
+ PyJWT
+pytest
+pytest-asyncio
+fastapi-jwt-auth
+requests
