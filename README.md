@@ -55,31 +55,7 @@ It's recommended to use a virtual environment to manage dependencies for your pr
 
     Once activated, you will see `(venv)` at the beginning of your terminal prompt, indicating that the virtual environment is active.
 
-### Install Dependencies
-
-Next, you need to install the project dependencies. While a `requirements.txt` file was not provided, we can create one based on the project's imports.
-
-1.  **Create `requirements.txt`**:
-
-    Based on the `main.py` and `models.py` files, the project uses the following libraries. Create a file named `requirements.txt` in your project's root directory and add the following lines:
-
-    ```txt
-    fastapi
-    uvicorn
-    sqlmodel
-    pydantic
-    passlib
-    python-jose[cryptography]
-     PyJWT
-    pytest
-    pytest-asyncio
-    fastapi-jwt-auth # although not directly imported, it's good practice for JWT
-    requests # useful for manual testing or scripting
-    ```
-
-    *Note: `fastapi-jwt-auth` and `requests` are added as commonly used libraries in FastAPI projects dealing with JWT and API testing, although not explicitly used in the provided code. You might need them later or for more advanced documentation.*
-
-2.  **Install dependencies from `requirements.txt`:**
+### Install dependencies from `requirements.txt`
 
     With your virtual environment activated, run:
 
@@ -101,45 +77,20 @@ The API uses a secret key for JWT (JSON Web Token) signing. You need to generate
 
 1.  **Generate a Secret Key:**
 
-    It's crucial to use a strong, randomly generated secret key. You can use Python to generate one:
+    Create a random secret key that will be used to sign the JWT tokens.
 
-    ```python
-    import secrets
-    import base64
+    To generate a secure random secret key use the command:
 
-    secret_key = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode()
-    print(secret_key)
+    ```bash
+    openssl rand -hex 32
     ```
 
-    Run this Python code snippet. It will print a securely generated secret key to your console. Copy this key.
+    It will print a securely generated secret key to your console. Copy this key.
 
 2.  **Set the `SECRET_KEY` in your application:**
 
-    For simplicity in this documentation, we will directly replace the placeholder secret key in `main.py`. **However, for production, it is highly recommended to use environment variables or a more secure configuration method to manage secrets.**
-
-    Open the `main.py` file and find the line:
-
-    ```python
-    SECRET_KEY = "your-secret-key-here"
-    ```
-
-    Replace `"your-secret-key-here"` with the secret key you generated in the previous step. For example:
-
-    ```python
-    SECRET_KEY = "your_generated_secret_key_xxxxxxxxxxxxx" # Replace with your actual key
-    ```
-
-    **Security Warning:**  Storing the secret key directly in the code is not recommended for production environments. Consider using environment variables or a dedicated secret management system for better security in real-world applications.  To use environment variables, you would typically do the following:
-
-    *   **Set an environment variable** named `SECRET_KEY` in your operating system or hosting environment.
-    *   **Modify `main.py`** to retrieve the secret key from the environment variable:
-
-        ```python
-        import os
-        SECRET_KEY = os.environ.get("SECRET_KEY")
-        if not SECRET_KEY:
-            raise ValueError("SECRET_KEY environment variable not set!")
-        ```
+    Create a .env file:
+    SECRET_KEY = **your secret key**
 
 ## Running the Application
 
@@ -153,18 +104,13 @@ To run the Expense API, use `uvicorn`, an ASGI server. Make sure your virtual en
     uvicorn main:app --reload
     ```
 
-    *   `main`:  This refers to the `main.py` file.
-    *   `app`:  This refers to the FastAPI instance named `app` in `main.py`.
-    *   `--reload`:  This option enables automatic reloading of the server whenever you make changes to the code, which is very helpful during development.
-
     You should see output in your terminal indicating that the server has started, usually on `http://127.0.0.1:8000` or `http://localhost:8000`.
 
 2.  **Access the API documentation:**
 
     FastAPI automatically generates interactive API documentation using Swagger UI and ReDoc. You can access it at:
 
-    *   **Swagger UI:**  `http://localhost:8000/docs`
-    *   **ReDoc:**     `http://localhost:8000/redoc`
+    **Swagger UI:**  `http://localhost:8000/docs`
 
     Use these documentation interfaces to explore the API endpoints and interact with them.
 
@@ -174,10 +120,10 @@ The project includes a comprehensive test suite using `pytest`. Ensure your virt
 
 1.  **Run the tests:**
 
-    Open your terminal in the project's root directory and simply run:
+    Open your terminal in the project's root directory and run:
 
     ```bash
-    pytest
+    pytest -v tests/
     ```
 
     pytest will discover and run all tests in the `tests` directory. You should see the test results in your terminal, indicating whether all tests passed.

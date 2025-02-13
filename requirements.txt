@@ -2,10 +2,12 @@ fastapi
 uvicorn
 sqlmodel
 pydantic
-passlib
+passlib[bcrypt]
 python-jose[cryptography]
- PyJWT
+PyJWT
 pytest
 pytest-asyncio
 fastapi-jwt-auth
 requests
+python-multipart
+httpx
