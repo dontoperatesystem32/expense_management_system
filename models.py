@@ -2,7 +2,7 @@ from datetime import datetime, UTC
 from typing import Optional
 
 from passlib.context import CryptContext
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlmodel import Field, Relationship, SQLModel
 
 # Password context for hashing
@@ -41,6 +41,9 @@ class ExpenseBase(SQLModel):
     category_id: Optional[int] = Field(default=None, foreign_key="category.id", gt=0)
     date: datetime = Field(default_factory=lambda: datetime.now(UTC))
     last_updated: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    recurrence_rule: Optional[str] = Field(default=None, description="Recurrence rule (e.g., 'daily', 'monthly', 'yearly')")
+    recurrence_start_date: Optional[datetime] = Field(default=None, description="Start date for recurrence")
+
 
 
 class Expense(ExpenseBase, table=True):
@@ -52,6 +55,16 @@ class Expense(ExpenseBase, table=True):
 
 class ExpenseCreate(ExpenseBase):
     pass
+    @field_validator('recurrence_rule')
+    def recurrence_rule_validation(cls, value: Optional[str]):
+        if value not in [None, 'daily', 'weekly', 'monthly', 'yearly']:
+           raise ValueError("recurrence_rule must be one of: 'daily', 'weekly', 'monthly', 'yearly', or None")
+        return value
+    @field_validator('recurrence_start_date')
+    def recurrence_start_date_required(cls, recurrence_start_date: Optional[datetime], values):
+        if values.get('recurrence_rule') is not None and recurrence_start_date is None:
+            raise ValueError("recurrence_start_date required when rec rule is set")
+ 
 
 
 class ExpenseRead(ExpenseBase):
@@ -69,11 +82,6 @@ class CategoryCreate(CategoryBase):
 
 class CategoryRead(CategoryBase):
     id: int
-    
-
-
-
-
 
 # Authentication models
 class Token(BaseModel):

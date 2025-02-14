@@ -1,5 +1,7 @@
 from datetime import date, timedelta, UTC
 
+from dateutil.relativedelta import relativedelta
+
 import datetime
 import os
 from contextlib import asynccontextmanager
@@ -182,7 +184,7 @@ async def get_expenses(
     end_date: Optional[date] = Query(
         None, description="Filter expenses created on or before this date (YYYY-MM-DD)"
     ),
-    category: Optional[str] = Query(None, description="Filter expenses by category"),
+    category_id: Optional[int] = Query(None, description="Filter expenses by category"),
     skip: int = Query(0, description="Number of records to skip for pagination", ge=0),
     limit: int = Query(100, description="Maximum number of records to return", le=1000),
 ):
@@ -196,14 +198,24 @@ async def get_expenses(
         query = query.where(Expense.date <= end_date)
 
     # Apply category filter
-    if category:
-        query = query.where(Expense.category == category)
+    if category_id:
+        query = query.where(Expense.category_id == category_id)
 
     # Apply pagination
     query = query.offset(skip).limit(limit)
 
     expenses = session.exec(query).all()
-    return expenses
+
+    #generate recurring expenses
+    expense_reads = []
+    for expense in expenses:
+        expense_read = ExpenseRead.model_validate(expense)
+        if expense.recurrence_rule:
+            generate_recurring_expenses(session, current_user.id, expense)
+            expense_read = ExpenseRead.model_validate(expense) 
+        expense_reads.append(expense_read)
+
+    return expense_reads
 
 
 @app.get("/expenses/{expense_id}", response_model=ExpenseRead)
@@ -215,7 +227,13 @@ async def get_expense(
     expense = session.get(Expense, expense_id)
     if not expense or expense.owner_id != current_user.id:
         raise HTTPException(status_code=404, detail="Expense not found")
-    return expense
+    
+
+    expense_read = ExpenseRead.model_validate(expense)
+    if expense.recurrence_rule:
+        generate_recurring_expenses(session, current_user.id, expense)
+        expense_read = ExpenseRead.model_validate(expense) 
+    return expense_read
 
 
 @app.put("/expenses/{expense_id}", response_model=ExpenseRead)
@@ -238,7 +256,9 @@ async def update_expense(
     session.commit()
     session.refresh(db_expense)
 
-    return db_expense
+
+
+
 
 
 @app.delete("/expenses/{expense_id}")
@@ -360,4 +380,57 @@ async def get_expenses_report(
     return report_dict
 
 
-    
+
+
+
+
+#recurring
+
+
+#each time get_expenses endpoint is requested, it updates the recurring expenses
+
+def generate_recurring_expenses(session: Session, current_user_id: int, expense: Expense, num_future_expenses: int = 3):
+    if not expense.recurrence_rule or not expense.recurrence_start_date:
+        return 
+
+    generated_expenses = []
+    next_date = expense.recurrence_start_date
+
+    for _ in range(num_future_expenses):
+        if next_date > datetime.datetime.now(UTC) : 
+            new_expense_data = {
+                "amount": expense.amount,
+                "description": expense.description,
+                "category": expense.category_id,
+                "date": next_date,
+                "owner_id": current_user_id,
+                "recurrence_rule": expense.recurrence_rule, 
+                "recurrence_start_date": expense.recurrence_start_date
+            }
+            db_expense = Expense.model_validate(new_expense_data) 
+            session.add(db_expense)
+            generated_expenses.append(db_expense)
+
+        if expense.recurrence_rule == 'daily':
+            next_date += timedelta(days=1)
+        elif expense.recurrence_rule == 'weekly':
+            next_date += timedelta(weeks=1)
+        elif expense.recurrence_rule == 'monthly':
+            next_date += relativedelta(months=1)
+        elif expense.recurrence_rule == 'yearly':
+            next_date += relativedelta(years=1)
+
+    session.commit()
+    return generated_expenses
+
+
+
+
+
+# new endpoint can be implemented for getting recurring endpoints
+# @app.get("/recurring_expenses", response_model=List[ExpenseRead])
+# async def get_recurring_expenses(
+#     current_user: Annotated[User, Depends(get_current_active_user)],
+#     session: Session = Depends(get_session)
+# ):
+#     pass #Implementation for listing only recurring expenses can be added here
