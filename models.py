@@ -38,7 +38,7 @@ class UserCreate(SQLModel):
 class ExpenseBase(SQLModel):
     amount: float = Field(..., gt=0)
     description: str = Field(..., min_length=3, max_length=255)
-    category: str = Field(..., min_length=3, max_length=100)
+    category_id: Optional[int] = Field(default=None, foreign_key="category.id", gt=0)
     date: datetime = Field(default_factory=lambda: datetime.now(UTC))
     last_updated: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
@@ -57,6 +57,22 @@ class ExpenseCreate(ExpenseBase):
 class ExpenseRead(ExpenseBase):
     id: int
     owner_id: int
+
+class CategoryBase(SQLModel):
+    description: str = Field(..., min_length=3, max_length=255)
+
+class Category(CategoryBase, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+
+class CategoryCreate(CategoryBase):
+    pass
+
+class CategoryRead(CategoryBase):
+    id: int
+    
+
+
+
 
 
 # Authentication models

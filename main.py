@@ -12,7 +12,7 @@ from jwt.exceptions import InvalidTokenError
 from passlib.context import CryptContext
 from sqlmodel import Session, SQLModel, create_engine, select
 
-from models import (Expense, ExpenseCreate, ExpenseRead, Token, TokenData,
+from models import (Expense, ExpenseCreate, ExpenseRead, Token, TokenData, CategoryBase, CategoryCreate, CategoryRead, Category,
                     User, UserCreate, UserRead)
 
 # Database setup
@@ -255,3 +255,50 @@ async def delete_expense(
     session.commit()
 
     return {"message": "Expense deleted successfully"}
+
+
+
+@app.post("/categories", response_model=CategoryRead)
+async def create_category(
+    category: CategoryCreate,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Session = Depends(get_session),
+):
+    db_category = Category(**category.model_dump())
+
+    session.add(db_category)
+    session.commit()
+    session.refresh(db_category)
+
+    return db_category
+
+
+
+@app.get("/categories", response_model=List[CategoryRead])
+async def get_categories(
+    session: Session = Depends(get_session),
+    skip: int = Query(0, description="Pagination offset"),
+    limit: int = Query(100, description="Maximum results per page", le=1000)
+):
+    """
+    Retrieve all categories with optional pagination.
+    """
+    query = select(Category).offset(skip).limit(limit)
+    categories = session.exec(query).all()
+    return categories
+
+
+@app.get("/categories/{category_id}", response_model=CategoryRead)
+async def get_category(
+    category_id: int,
+    session: Session = Depends(get_session)
+):
+    """
+    Retrieve a specific category by its ID.
+    """
+    category = session.get(Category, category_id)
+    if not category:
+        raise HTTPException(status_code=404, detail="Category not found")
+    return category
+
+
