@@ -302,3 +302,62 @@ async def get_category(
     return category
 
 
+
+
+#stage 3
+
+
+
+@app.get("/reports/expenses", response_model=dict)
+async def get_expenses_report(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Session = Depends(get_session),
+    start_date: Optional[date] = Query(
+        None, description="Filter expenses created on or after this date (YYYY-MM-DD)"
+    ),
+    end_date: Optional[date] = Query(
+        None, description="Filter expenses created on or before this date (YYYY-MM-DD)"
+    )
+):
+    # base query
+    query = select(Expense).where(Expense.owner_id == current_user.id)
+
+    # Apply date range filter
+    if start_date:
+        query = query.where(Expense.date >= start_date)
+    if end_date:
+        query = query.where(Expense.date <= end_date)
+
+    report_dict = dict()
+
+    expenses = session.exec(query).all()
+
+    #get number of categories
+
+    categories = []
+    # categories_number = 0
+
+    for expense in expenses:
+        categories.append(expense.category_id)
+
+    categories = set(categories)
+    print("\ncategories number: ", len(categories))
+
+    # categories_amount = len(categories)
+    
+    #iterate over categories
+    for category_id in categories:
+        temp_query = query.where(Expense.category_id == category_id)
+        expenses_per_cat = session.exec(temp_query).all()
+        category_sum = 0
+        for expense in expenses_per_cat:
+            category_sum = category_sum + expense.amount
+        print(f'category id: {category_id} category_sum = {category_sum}')
+        report_dict[str(category_id)] = category_sum
+
+    print(f'report: \n {report_dict}')
+
+    return report_dict
+
+
+    
